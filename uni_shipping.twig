@@ -1,0 +1,37 @@
+<div class="heading">{{ text_delivery_methods }}</div>
+<div class="shipping-method">
+	{% if error_warning %}
+		<div class="alert alert-warning"><i class="fa fa-exclamation-circle"></i> {{ error_warning }}</div>
+	{% endif %}
+	
+	{# Перевіряємо, чи є shipping_methods масивом і чи він не порожній #}
+	{% if shipping_methods is iterable and shipping_methods %}
+		{# Проходимо по всіх методах доставки в одному циклі #}
+		{% for key, method in shipping_methods %}
+			{# Просто пропускаємо методи, які не є доставкою (наприклад, самовивіз) #}
+			{% if key != 'multistore_pickup' %}
+				{% if method.title %}
+					<div class="shipping-method__title">{{ method.title }}</div>
+				{% endif %}
+				
+				{% if not method.error %}
+					{% for quote in method.quote %}
+						<div class="shipping-method__item radio">
+							<label class="shipping-method__label input">
+								{% if quote.code == code %}
+									<input type="radio" name="shipping_method" value="{{ quote.code }}" id="{{ quote.code }}" checked="checked" />
+								{% else %}
+									<input type="radio" name="shipping_method" value="{{ quote.code }}" id="{{ quote.code }}" />
+								{% endif %}
+								<span class="shipping-method__quote">{{ quote.title }}:<span class="shipping-method__quote-text">{{ quote.text }}</span></span>
+							</label>
+							{% if quote.description is not empty %}{{ quote.description }}{% endif %}
+						</div>
+					{% endfor %}
+				{% else %}
+					<div class="alert alert-danger">{{ method.error }}</div>
+				{% endif %}
+			{% endif %}
+		{% endfor %}
+	{% endif %}
+</div>
