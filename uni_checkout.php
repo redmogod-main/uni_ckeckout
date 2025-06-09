@@ -1,232 +1,272 @@
 <?php 
 class ControllerCheckoutUniCheckout extends Controller {
 	private $method_pickup = 'pickup';
-	private $method_pickup_code = 'unicheckout.pickup';
+	private $method_pickup_code = null; // Буде встановлено динамічно на основі обраного методу multistore_pickup
 	private $method_delivery = 'delivery';
 	
-	public function index() {
-		$uniset = $this->config->get('config_unishop2');
-		$lang_id = $this->config->get('config_language_id');
-		
-		$this->document->addStyle('catalog/view/theme/default/stylesheet/shippingdata.css');
+public function index() {
+	$uniset = $this->config->get('config_unishop2');
+	$lang_id = $this->config->get('config_language_id');
 	
-		$settings = $uniset['checkout'];
-		
-		$this->load->language('checkout/cart');
-		$this->load->language('checkout/checkout');
-		$this->load->language('extension/module/uni_othertext');
-		$this->load->language('checkout/uni_checkout');
-		
-		$this->load->model('account/custom_field');
-		$this->load->model('account/customer_group');
+	// Ініціалізуємо method_pickup_code на основі доступних методів multistore_pickup
+	$this->method_pickup_code = 'multistore_pickup.multistore_1'; // Стандартне значення, буде оновлено пізніше
 	
-		if(isset($this->session->data['shipping_address_id']))	{
-			unset($this->session->data['shipping_address_id']);
-		}
-		
-		$this->document->addStyle('catalog/view/theme/unishop2/stylesheet/checkout.css');
-		$this->document->addScript('catalog/view/theme/unishop2/js/jquery.maskedinput.min.js');
-		
-		$this->document->setTitle($this->language->get('heading_title'));
-		
-		$data['breadcrumbs'][] = [
-			'text' => $this->language->get('text_home'),
-			'href' => $this->url->link('common/home')
-		];
+	// Налаштовуємо ініціалізацію методів доставки щоб мати доступ до списку методів
+	$this->shipping_method();
 	
-		$data['breadcrumbs'][] = [
-			'text' => $this->language->get('heading_title'),
-			'href' => $this->url->link('checkout/uni_checkout', '', true)
-		];
-		
-		$data['currency'] = $this->session->data['currency'];
-		
-		if (!isset($this->session->data['guest']['customer_group_id'])) {
-			$this->session->data['guest']['customer_group_id'] = (int)$this->config->get('config_customer_group_id');
-		}
-		
-		if (!$this->cart->hasProducts() && empty($this->session->data['vouchers'])) {
-			$this->response->redirect($this->url->link('checkout/cart'));
-		}
-		
-		$firstname = isset($this->session->data['firstname']) ? $this->session->data['firstname'] : '';
-		$lastname = isset($this->session->data['lastname']) ? $this->session->data['lastname'] : '';
-		$email = isset($this->session->data['email']) ? $this->session->data['email'] : '';
-		$telephone = isset($this->session->data['telephone']) ? $this->session->data['telephone'] : '';
-		
-		$data['customer_id'] = '';
-				
-		if($this->customer->isLogged()) {
-			$this->load->model('account/address');
-			
-			$firstname = $this->customer->getFirstName();
-			$lastname = $this->customer->getLastName();
-			$email = $this->customer->getEmail();
-			$telephone = $this->customer->getTelephone();
-			
-			$data['customer_id'] = $this->customer->getId();
-			
-			unset($this->session->data['shipping_method']);							
-			unset($this->session->data['shipping_methods']);
-			unset($this->session->data['shipping_address']);
-			unset($this->session->data['shipping_address_id']);
-			unset($this->session->data['payment_address']);
-			unset($this->session->data['payment_address_id']);
-			unset($this->session->data['payment_method']);	
-			unset($this->session->data['payment_methods']);
-	
-			unset($this->session->data['guest']);
-			unset($this->session->data['account']);
-			unset($this->session->data['shipping_country_id']);
-			unset($this->session->data['shipping_zone_id']);
-			unset($this->session->data['payment_country_id']);
-			unset($this->session->data['payment_zone_id']);
-		}
-		
-		$data['comment'] = isset($this->session->data['comment']) ? $this->session->data['comment'] : '';
-		$data['hide_comment'] = isset($uniset['checkout']['hide_comment']);
-	
-		$data['customer_groups'] = [];
-		
-		if (is_array($this->config->get('config_customer_group_display'))) {
-			$customer_groups = $this->model_account_customer_group->getCustomerGroups();
-			
-			foreach ($customer_groups as $customer_group) {
-				if (in_array($customer_group['customer_group_id'], $this->config->get('config_customer_group_display'))) {
-					$data['customer_groups'][] = $customer_group;
-				}
-			}
-		}
-		
-		$data['customer_group_id'] = isset($this->session->data['guest']['customer_group_id']) ? $this->session->data['guest']['customer_group_id'] : $this->config->get('config_customer_group_id');
-		
-		$data['is_shipping'] = $this->cart->hasShipping() ? true : false;
-		
-		$data['checkout_guest'] = $this->config->get('config_checkout_guest');
-		
-		$data['inputs'] = [
-			'firstname'	=> [
-				'placeholder'	=> isset($settings['name']['text'][$lang_id]) ? $settings['name']['text'][$lang_id] : '',
-				'value'			=> $firstname,
-				'type'			=> 'text',
-				'status' 		=> 1,
-				'required' 		=> 1,
-				'sort_order'	=> $settings['name']['sort_order']
-			],
-			'lastname'	=> [
-				'placeholder'	=> isset($settings['lastname']['text'][$lang_id]) ? $settings['lastname']['text'][$lang_id] : '',
-				'value'			=> $lastname,
-				'type'			=> 'text',
-				'status' 		=> isset($settings['lastname']['status']),
-				'required' 		=> isset($settings['lastname']['required']),
-				'sort_order'	=> $settings['lastname']['sort_order']
-			],
-			'telephone'	=> [
-				'placeholder'	=> isset($settings['telephone']['text'][$lang_id]) ? $settings['telephone']['text'][$lang_id] : '',
-				'value'			=> $telephone,
-				'type'			=> 'tel',
-				'status' 		=> isset($settings['telephone']['status']),
-				'required' 		=> isset($settings['telephone']['required']),
-				'sort_order'	=> $settings['telephone']['sort_order']
-			],
-			'email'	=> [
-				'placeholder'	=> isset($settings['email']['text'][$lang_id]) ? $settings['email']['text'][$lang_id] : '',
-				'value'			=> $email,
-				'type'			=> 'email',
-				'status' 		=> isset($settings['email']['status']),
-				'required' 		=> isset($settings['email']['required']),
-				'sort_order'	=> $settings['email']['sort_order']
-			]
-		];
-		
-		if(count($data['inputs']) > 1) {
-			array_multisort(array_column($data['inputs'], 'sort_order'), SORT_ASC, $data['inputs']);
-		}
-		
-		$data['mask_telephone'] = isset($settings['telephone']['mask'][$lang_id]) ? $uniset['checkout']['telephone']['mask'][$lang_id] : '';
-		
-		$data['show_popup_login'] = isset($uniset['login_form']['popup']) && !$this->customer->isLogged() ? true : false;
-		
-		$data['password_text'] = isset($settings['password']['text'][$lang_id]) ? $settings['password']['text'][$lang_id] : '';
-		
-		$data['show_password_confirm'] = isset($settings['password_confirm']['status']) ? true : false;
-		$data['password_confirm_text'] = isset($settings['password_confirm']['text'][$lang_id]) ? $settings['password_confirm']['text'][$lang_id] : '';
-		
-		$data['checkout_passgen'] = isset($settings['passgen']) ? true : false;
-		
-		$data['metric_id'] = isset($uniset['checkout']['metric_id']) ? $uniset['checkout']['metric_id'] : 0;
-		$data['metric_taget_id'] = isset($uniset['checkout']['metric_target_id']) ? $uniset['checkout']['metric_target_id'] : 0;
-		$data['metric_target'] = isset($uniset['checkout']['metric_target']) ? $uniset['checkout']['metric_target'] : '';
-		$data['analytic_category'] = isset($uniset['checkout']['analytic_category']) ? $uniset['checkout']['analytic_category'] : '';
-		$data['analytic_action'] = isset($uniset['checkout']['analytic_action']) ? $uniset['checkout']['analytic_action'] : '';
-		
-		if(!isset($this->session->data['shipping_method_reserved'])) {
-			$this->session->data['shipping_method_reserved'] = [];
-		}
-		
-		if(!isset($this->session->data['unicheckout_pickup'])) {
-			$this->session->data['unicheckout_pickup'] = [];
-		}
-		
-		// Розділяємо методи доставки
-		if($this->cart->hasShipping()) {
-			$all_shipping_methods = $this->getShippingMethods();
-			
-			// Розділяємо на самовивіз та доставку
-			$data['pickup_methods'] = [];
-			$data['delivery_methods'] = [];
-			
-			foreach ($all_shipping_methods as $key => $method) {
-				if ($key == 'multistore_pickup') {
-					$data['pickup_methods'][$key] = $method;
-				} else {
-					$data['delivery_methods'][$key] = $method;
-				}
-			}
-			
-			$data['code'] = isset($this->session->data['shipping_method']) ? $this->session->data['shipping_method']['code'] : '';
-			$data['text_pickup_methods'] = $this->language->get('text_pickup_methods') ?: 'Самовивіз';
-			
-			$data['has_pickup'] = !empty($data['pickup_methods']);
-			$data['has_delivery'] = !empty($data['delivery_methods']);
-			
-			// Передаємо помилки якщо є
-			if (isset($this->session->data['error_warning'])) {
-				$data['error_warning'] = $this->session->data['error_warning'];
-			}
-		} else {
-			$data['has_pickup'] = false;
-			$data['has_delivery'] = false;
-			$data['pickup_methods'] = [];
-			$data['delivery_methods'] = [];
-		}
-		
-		$data['custom_fields'] = $this->custom_field('account');
-		$data['address'] = $this->address();
-		$data['shipping_method'] = $this->shipping_method();
-		
-		$default_method = isset($uniset['checkout']['pickup']['not_default']) && $data['shipping_method'] ? $this->method_delivery : $this->method_pickup; 
-		
-		if(!isset($this->session->data['selected_method']) || !$data['shipping_method']) {
-			$this->session->data['selected_method'] = $default_method;
-		}
-		
-		$data['pickup_items'] = $this->setPickupItem();
-		
-		$data['payment_method'] = $this->payment_method();
-		$data['cart'] = $this->cart();
-		$data['totals'] = $this->totals();
-		
-		$data['default_method'] = $default_method;
-		$data['selected_method'] = $this->session->data['selected_method'];
-		
-		$data['content_top'] = $this->load->controller('common/content_top');
-		$data['content_bottom'] = $this->load->controller('common/content_bottom');
-		$data['footer'] = $this->load->controller('common/footer');
-		$data['header'] = $this->load->controller('common/header');
-		
-		$this->response->setOutput($this->load->view('checkout/uni_checkout', $data));
+	// Якщо є доступні методи multistore_pickup, оновлюємо змінну
+	if (isset($this->session->data['shipping_methods']['multistore_pickup']['quote']) && !empty($this->session->data['shipping_methods']['multistore_pickup']['quote'])) {
+		$first_quote = reset($this->session->data['shipping_methods']['multistore_pickup']['quote']);
+		$this->method_pickup_code = $first_quote['code'];
 	}
+	
+	$this->document->addStyle('catalog/view/theme/default/stylesheet/shippingdata.css');
+
+	$settings = $uniset['checkout'];
+	
+	$this->load->language('checkout/cart');
+	$this->load->language('checkout/checkout');
+	$this->load->language('extension/module/uni_othertext');
+	$this->load->language('checkout/uni_checkout');
+	
+	$this->load->model('account/custom_field');
+	$this->load->model('account/customer_group');
+
+	if(isset($this->session->data['shipping_address_id']))	{
+		unset($this->session->data['shipping_address_id']);
+	}
+	
+	$this->document->addStyle('catalog/view/theme/unishop2/stylesheet/checkout.css');
+	$this->document->addScript('catalog/view/theme/unishop2/js/jquery.maskedinput.min.js');
+	
+	$this->document->setTitle($this->language->get('heading_title'));
+	
+	$data['breadcrumbs'][] = [
+		'text' => $this->language->get('text_home'),
+		'href' => $this->url->link('common/home')
+	];
+
+	$data['breadcrumbs'][] = [
+		'text' => $this->language->get('heading_title'),
+		'href' => $this->url->link('checkout/uni_checkout', '', true)
+	];
+	
+	$data['currency'] = $this->session->data['currency'];
+	
+	if (!isset($this->session->data['guest']['customer_group_id'])) {
+		$this->session->data['guest']['customer_group_id'] = (int)$this->config->get('config_customer_group_id');
+	}
+	
+	if (!$this->cart->hasProducts() && empty($this->session->data['vouchers'])) {
+		$this->response->redirect($this->url->link('checkout/cart'));
+	}
+	
+	$firstname = isset($this->session->data['firstname']) ? $this->session->data['firstname'] : '';
+	$lastname = isset($this->session->data['lastname']) ? $this->session->data['lastname'] : '';
+	$email = isset($this->session->data['email']) ? $this->session->data['email'] : '';
+	$telephone = isset($this->session->data['telephone']) ? $this->session->data['telephone'] : '';
+	
+	$data['customer_id'] = '';
+			
+	if($this->customer->isLogged()) {
+		$this->load->model('account/address');
+		
+		$firstname = $this->customer->getFirstName();
+		$lastname = $this->customer->getLastName();
+		$email = $this->customer->getEmail();
+		$telephone = $this->customer->getTelephone();
+		
+		$data['customer_id'] = $this->customer->getId();
+		
+		unset($this->session->data['shipping_method']);							
+		unset($this->session->data['shipping_methods']);
+		unset($this->session->data['shipping_address']);
+		unset($this->session->data['shipping_address_id']);
+		unset($this->session->data['payment_address']);
+		unset($this->session->data['payment_address_id']);
+		unset($this->session->data['payment_method']);	
+		unset($this->session->data['payment_methods']);
+
+		unset($this->session->data['guest']);
+		unset($this->session->data['account']);
+		unset($this->session->data['shipping_country_id']);
+		unset($this->session->data['shipping_zone_id']);
+		unset($this->session->data['payment_country_id']);
+		unset($this->session->data['payment_zone_id']);
+	}
+	
+	$data['comment'] = isset($this->session->data['comment']) ? $this->session->data['comment'] : '';
+	$data['hide_comment'] = isset($uniset['checkout']['hide_comment']);
+
+	$data['customer_groups'] = [];
+	
+	if (is_array($this->config->get('config_customer_group_display'))) {
+		$customer_groups = $this->model_account_customer_group->getCustomerGroups();
+		
+		foreach ($customer_groups as $customer_group) {
+			if (in_array($customer_group['customer_group_id'], $this->config->get('config_customer_group_display'))) {
+				$data['customer_groups'][] = $customer_group;
+			}
+		}
+	}
+	
+	$data['customer_group_id'] = isset($this->session->data['guest']['customer_group_id']) ? $this->session->data['guest']['customer_group_id'] : $this->config->get('config_customer_group_id');
+	
+	$data['is_shipping'] = $this->cart->hasShipping() ? true : false;
+	
+	$data['checkout_guest'] = $this->config->get('config_checkout_guest');
+	
+	$data['inputs'] = [
+		'firstname'	=> [
+			'placeholder'	=> isset($settings['name']['text'][$lang_id]) ? $settings['name']['text'][$lang_id] : '',
+			'value'			=> $firstname,
+			'type'			=> 'text',
+			'status' 		=> 1,
+			'required' 		=> 1,
+			'sort_order'	=> $settings['name']['sort_order']
+		],
+		'lastname'	=> [
+			'placeholder'	=> isset($settings['lastname']['text'][$lang_id]) ? $settings['lastname']['text'][$lang_id] : '',
+			'value'			=> $lastname,
+			'type'			=> 'text',
+			'status' 		=> isset($settings['lastname']['status']),
+			'required' 		=> isset($settings['lastname']['required']),
+			'sort_order'	=> $settings['lastname']['sort_order']
+		],
+		'telephone'	=> [
+			'placeholder'	=> isset($settings['telephone']['text'][$lang_id]) ? $settings['telephone']['text'][$lang_id] : '',
+			'value'			=> $telephone,
+			'type'			=> 'tel',
+			'status' 		=> isset($settings['telephone']['status']),
+			'required' 		=> isset($settings['telephone']['required']),
+			'sort_order'	=> $settings['telephone']['sort_order']
+		],
+		'email'	=> [
+			'placeholder'	=> isset($settings['email']['text'][$lang_id]) ? $settings['email']['text'][$lang_id] : '',
+			'value'			=> $email,
+			'type'			=> 'email',
+			'status' 		=> isset($settings['email']['status']),
+			'required' 		=> isset($settings['email']['required']),
+			'sort_order'	=> $settings['email']['sort_order']
+		]
+	];
+	
+	if(count($data['inputs']) > 1) {
+		array_multisort(array_column($data['inputs'], 'sort_order'), SORT_ASC, $data['inputs']);
+	}
+	
+	$data['mask_telephone'] = isset($settings['telephone']['mask'][$lang_id]) ? $uniset['checkout']['telephone']['mask'][$lang_id] : '';
+	
+	$data['show_popup_login'] = isset($uniset['login_form']['popup']) && !$this->customer->isLogged() ? true : false;
+	
+	$data['password_text'] = isset($settings['password']['text'][$lang_id]) ? $settings['password']['text'][$lang_id] : '';
+	
+	$data['show_password_confirm'] = isset($settings['password_confirm']['status']) ? true : false;
+	$data['password_confirm_text'] = isset($settings['password_confirm']['text'][$lang_id]) ? $settings['password_confirm']['text'][$lang_id] : '';
+	
+	$data['checkout_passgen'] = isset($settings['passgen']) ? true : false;
+	
+	$data['metric_id'] = isset($uniset['checkout']['metric_id']) ? $uniset['checkout']['metric_id'] : 0;
+	$data['metric_taget_id'] = isset($uniset['checkout']['metric_target_id']) ? $uniset['checkout']['metric_target_id'] : 0;
+	$data['metric_target'] = isset($uniset['checkout']['metric_target']) ? $uniset['checkout']['metric_target'] : '';
+	$data['analytic_category'] = isset($uniset['checkout']['analytic_category']) ? $uniset['checkout']['analytic_category'] : '';
+	$data['analytic_action'] = isset($uniset['checkout']['analytic_action']) ? $uniset['checkout']['analytic_action'] : '';
+	
+	if(!isset($this->session->data['shipping_method_reserved'])) {
+		$this->session->data['shipping_method_reserved'] = [];
+	}
+	
+	if(!isset($this->session->data['unicheckout_pickup'])) {
+		$this->session->data['unicheckout_pickup'] = [];
+	}
+	
+	// Розділяємо методи доставки
+	if($this->cart->hasShipping()) {
+		$all_shipping_methods = $this->getShippingMethods();
+		
+		// Розділяємо на самовивіз та доставку
+		$data['pickup_methods'] = [];
+		$data['delivery_methods'] = [];
+		
+		foreach ($all_shipping_methods as $key => $method) {
+			if ($key == 'multistore_pickup') {
+				$data['pickup_methods'][$key] = $method;
+			} else {
+				$data['delivery_methods'][$key] = $method;
+			}
+		}
+		
+		$data['code'] = isset($this->session->data['shipping_method']) ? $this->session->data['shipping_method']['code'] : '';
+		$data['text_pickup_methods'] = $this->language->get('text_pickup_methods') ?: 'Самовивіз';
+		
+		$data['has_pickup'] = !empty($data['pickup_methods']);
+		$data['has_delivery'] = !empty($data['delivery_methods']);
+		
+		// ВИПРАВЛЕННЯ: Встановлюємо правильний метод доставки по замовчуванню
+		$default_pickup_method = null;
+		if ($data['has_pickup'] && isset($data['pickup_methods']['multistore_pickup']['quote'])) {
+			// Берем перший доступний метод самовивозу
+			$first_quote = reset($data['pickup_methods']['multistore_pickup']['quote']);
+			$default_pickup_method = $first_quote['code']; // це буде multistore_pickup.multistore_123
+		}
+		
+		// Передаємо помилки якщо є
+		if (isset($this->session->data['error_warning'])) {
+			$data['error_warning'] = $this->session->data['error_warning'];
+		}
+	} else {
+		$data['has_pickup'] = false;
+		$data['has_delivery'] = false;
+		$data['pickup_methods'] = [];
+		$data['delivery_methods'] = [];
+		$default_pickup_method = null;
+	}
+	
+	$data['custom_fields'] = $this->custom_field('account');
+	$data['address'] = $this->address();
+	$data['shipping_method'] = $this->shipping_method();
+	
+	$default_method = isset($uniset['checkout']['pickup']['not_default']) && $data['shipping_method'] ? $this->method_delivery : $this->method_pickup; 
+	
+	if(!isset($this->session->data['selected_method']) || !$data['shipping_method']) {
+		$this->session->data['selected_method'] = $default_method;
+		
+		// ВИПРАВЛЕННЯ: Якщо обираємо самовивіз по замовчуванню, встановлюємо правильний метод
+		if ($default_method == $this->method_pickup && $default_pickup_method) {
+			// Знаходимо інформацію про цей метод
+			if (isset($data['pickup_methods']['multistore_pickup']['quote'])) {
+				foreach ($data['pickup_methods']['multistore_pickup']['quote'] as $quote) {
+					if ($quote['code'] == $default_pickup_method) {
+						$this->session->data['shipping_method'] = array(
+							'code' => $quote['code'],
+							'title' => $quote['title'],
+							'cost' => isset($quote['cost']) ? $quote['cost'] : 0,
+							'tax_class_id' => isset($quote['tax_class_id']) ? $quote['tax_class_id'] : 0,
+							'text' => $quote['text']
+						);
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	$data['pickup_items'] = $this->setPickupItem();
+	
+	$data['payment_method'] = $this->payment_method();
+	$data['cart'] = $this->cart();
+	$data['totals'] = $this->totals();
+	
+	$data['default_method'] = $default_method;
+	$data['selected_method'] = $this->session->data['selected_method'];
+	
+	$data['content_top'] = $this->load->controller('common/content_top');
+	$data['content_bottom'] = $this->load->controller('common/content_bottom');
+	$data['footer'] = $this->load->controller('common/footer');
+	$data['header'] = $this->load->controller('common/header');
+	
+	$this->response->setOutput($this->load->view('checkout/uni_checkout', $data));
+}
 	
 	private function getShippingMethods() {
 		// Завантажуємо модель для отримання методів доставки
@@ -921,42 +961,82 @@ class ControllerCheckoutUniCheckout extends Controller {
 		$pickup_items = [];
 		
 		if($status && $this->cart->hasProducts()) {
+			// Отримуємо ID обраного пункту самовивозу
+			$selected_pickup_id = -1;
 			if(isset($this->request->post['unicheckout_pickup_item_id'])) {
-				$id = (int)$this->request->post['unicheckout_pickup_item_id'];
+				$selected_pickup_id = $this->request->post['unicheckout_pickup_item_id'];
 			} else if (isset($this->session->data['unicheckout_pickup']['id'])) {
-				$id = (int)$this->session->data['unicheckout_pickup']['id'];
-			} else {
-				$id = 0;
+				$selected_pickup_id = $this->session->data['unicheckout_pickup']['id'];
 			}
 			
-			foreach($uniset['checkout']['pickup']['items'] as $key => $item) {
-				if(isset($item['title'][$lang_id]) && $item['title'][$lang_id]) {
-					$pickup_items[] = [
-						'id'			=> $key,
-						'title' 		=> $item['title'][$lang_id],
-						'address' 		=> html_entity_decode($item['address'][$lang_id], ENT_QUOTES, 'UTF-8'),
-						'working_hours' => html_entity_decode($item['working_hours'][$lang_id], ENT_QUOTES, 'UTF-8'),
-						'shelf_life' 	=> html_entity_decode($item['shelf_life'][$lang_id], ENT_QUOTES, 'UTF-8'),
-						'map'		 	=> $item['map'][$lang_id],
-						'selected'		=> $id == $key ? true : false
-					]; 
+			// Формуємо список доступних пунктів самовивозу з налаштувань
+			$found_selected_item = null;
+			if (isset($uniset['checkout']['pickup']['items']) && is_array($uniset['checkout']['pickup']['items'])) {
+				foreach($uniset['checkout']['pickup']['items'] as $key => $item) {
+					if(isset($item['title'][$lang_id]) && $item['title'][$lang_id]) {
+						$is_selected = ($selected_pickup_id == $key);
+						$pickup_point_data = [
+							'id'			=> $key,
+							'title' 		=> $item['title'][$lang_id],
+							'address' 		=> html_entity_decode($item['address'][$lang_id], ENT_QUOTES, 'UTF-8'),
+							'working_hours' => html_entity_decode($item['working_hours'][$lang_id], ENT_QUOTES, 'UTF-8'),
+							'shelf_life' 	=> html_entity_decode($item['shelf_life'][$lang_id], ENT_QUOTES, 'UTF-8'),
+							'map'		 	=> $item['map'][$lang_id],
+							'selected'		=> $is_selected,
+							// store_id повинен бути налаштований для кожного пункту самовивозу
+							'store_id'		=> isset($item['store_id']) ? (int)$item['store_id'] : (int)$key 
+						];
+						
+						$pickup_items[] = $pickup_point_data;
+	
+						if ($is_selected) {
+							$found_selected_item = $pickup_point_data;
+						}
+					}
 				}
 			}
-
-			if($pickup_items && isset($pickup_items[$id])) {
-				$this->session->data['unicheckout_pickup'] = [
-					'id' 			=> (int)$pickup_items[$id]['id'],
-					'code'			=> $this->method_pickup_code,
-					'title'			=> $pickup_items[$id]['title'],
-					'working_hours'	=> $pickup_items[$id]['working_hours'],
-					'shelf_life'	=> $pickup_items[$id]['shelf_life'],
-					'cost' 		   	=> 0,
-					'tax_class_id'	=> 0,
-					'text' 			=> ''
-				];
+			
+			// Якщо пункт самовивозу був обраний, знаходимо для нього відповідний метод доставки
+			if ($found_selected_item) {
+				$shipping_quote_to_set = null;
+				$store_id_to_find = $found_selected_item['store_id'];
 				
-				if($this->session->data['selected_method'] == $this->method_pickup) {				
-					$this->session->data['shipping_method'] = $this->session->data['unicheckout_pickup'];
+				// Перевіряємо, чи доступні методи доставки multistore_pickup в сесії
+				if (isset($this->session->data['shipping_methods']['multistore_pickup']['quote'])) {
+					// Ключ для методу має вигляд 'multistore_X', де X - це store_id
+					$quote_key_to_find = 'multistore_' . $store_id_to_find;
+					
+					if (isset($this->session->data['shipping_methods']['multistore_pickup']['quote'][$quote_key_to_find])) {
+						$shipping_quote_to_set = $this->session->data['shipping_methods']['multistore_pickup']['quote'][$quote_key_to_find];
+					}
+				}
+	
+				// Якщо ми знайшли валідний метод доставки для обраного пункту
+				if ($shipping_quote_to_set) {
+					// Зберігаємо дані про обраний пункт самовивозу в сесію
+					$this->session->data['unicheckout_pickup'] = [
+						'id' 			=> $found_selected_item['id'],
+						'code'			=> $shipping_quote_to_set['code'], // Використовуємо правильний код
+						'title'			=> $found_selected_item['title'],
+						'working_hours'	=> $found_selected_item['working_hours'],
+						'shelf_life'	=> $found_selected_item['shelf_life'],
+						'cost' 			=> $shipping_quote_to_set['cost'],
+						'tax_class_id'	=> $shipping_quote_to_set['tax_class_id'],
+						'text' 			=> $shipping_quote_to_set['text'],
+						'store_id'		=> $found_selected_item['store_id']
+					];
+					
+					// Якщо основний обраний метод - самовивіз, оновлюємо shipping_method в сесії
+					if(isset($this->session->data['selected_method']) && $this->session->data['selected_method'] == $this->method_pickup) {
+						$this->session->data['shipping_method'] = $shipping_quote_to_set;
+					}
+				} else {
+					 // Налаштований store_id для пункту самовивозу не має активного методу доставки.
+					 // Очищуємо вибір, щоб уникнути використання некоректного методу.
+					 unset($this->session->data['unicheckout_pickup']);
+					 if(isset($this->session->data['selected_method']) && $this->session->data['selected_method'] == $this->method_pickup) {
+						unset($this->session->data['shipping_method']);
+					 }
 				}
 			}
 		}
@@ -977,7 +1057,35 @@ class ControllerCheckoutUniCheckout extends Controller {
 			
 			if($receipt_method == $this->method_pickup) {
 				$this->session->data['selected_method'] = $this->method_pickup;
-				$this->session->data['shipping_method'] = $this->session->data['unicheckout_pickup'];
+				
+				$pickup_method_found = false;
+	
+				// Перевіряємо, чи доступні методи multistore_pickup
+				if (isset($this->session->data['shipping_methods']['multistore_pickup']['quote']) && !empty($this->session->data['shipping_methods']['multistore_pickup']['quote'])) {
+					// Намагаємося знайти конкретний метод на основі раніше обраного store_id
+					if (isset($this->session->data['unicheckout_pickup']['store_id'])) {
+						$store_id = $this->session->data['unicheckout_pickup']['store_id'];
+						$quote_key = 'multistore_' . $store_id;
+						
+						if (isset($this->session->data['shipping_methods']['multistore_pickup']['quote'][$quote_key])) {
+							$this->session->data['shipping_method'] = $this->session->data['shipping_methods']['multistore_pickup']['quote'][$quote_key];
+							$pickup_method_found = true;
+						}
+					}
+					
+					// Якщо конкретний метод не знайдено (напр. пункт ще не обрано), використовуємо перший доступний
+					if (!$pickup_method_found) {
+						$first_quote = reset($this->session->data['shipping_methods']['multistore_pickup']['quote']);
+						$this->session->data['shipping_method'] = $first_quote;
+						$pickup_method_found = true;
+					}
+				}
+				
+				// Запасний варіант, якщо multistore_pickup не використовується
+				if (!$pickup_method_found && !empty($this->session->data['unicheckout_pickup'])) {
+					$this->session->data['shipping_method'] = $this->session->data['unicheckout_pickup'];
+				}
+				
 			} else if($receipt_method == $this->method_delivery) {
 				$this->session->data['selected_method'] = $this->method_delivery;
 				$this->session->data['shipping_method'] = $this->session->data['shipping_method_reserved'];
@@ -1620,7 +1728,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 		
 		$this->load->model('account/customer');
 		$this->load->model('setting/extension');
-
+	
 		if (!$this->cart->hasShipping()) {
 			unset($this->session->data['shipping_address']);
 			unset($this->session->data['shipping_method']);
@@ -1628,7 +1736,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 		}
 		
 		$currency = $this->session->data['currency'];
-
+	
 		$order_data = [];
 		
 		$total_data = [];
@@ -1642,30 +1750,30 @@ class ControllerCheckoutUniCheckout extends Controller {
 			'taxes'  => &$taxes,
 			'total'  => &$total
 		];
-
+	
 		$sort_order = [];
-
+	
 		$results = $this->model_setting_extension->getExtensions('total');
-
+	
 		foreach ($results as $key => $value) {
 			$sort_order[$key] = $this->config->get('total_'.$value['code'].'_sort_order');
 		}
-
+	
 		array_multisort($sort_order, SORT_ASC, $results);
 		
 		if(isset($uniset['checkout']['pickup']['status']) && !empty($this->session->data['unicheckout_pickup']) && $this->session->data['selected_method'] == $this->method_pickup) {
 			$this->config->set('total_shipping_status', false);
 		}
-
+	
 		foreach ($results as $result) {
 			if ($this->config->get('total_' . $result['code'] . '_status')) {
 				$this->load->model('extension/total/' . $result['code']);
 				$this->{'model_extension_total_' . $result['code']}->getTotal($total_data);
 			}
 		}
-
+	
 		$sort_order = []; 
-
+	
 		foreach ($totals as $key => $value) {
 			$sort_order[$key] = $value['sort_order'];
 		}
@@ -1673,7 +1781,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 		array_multisort($sort_order, SORT_ASC, $totals);
 		
 		$order_data['totals'] = $totals;
-
+	
 		$order_data['invoice_prefix'] = $this->config->get('config_invoice_prefix');
 		$order_data['store_id'] = $this->config->get('config_store_id');
 		$order_data['store_name'] = $this->config->get('config_name');
@@ -1705,7 +1813,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 		}
 			
 		$order_data['custom_field'] = isset($this->session->data['custom_field']) ? $this->session->data['custom_field'] : [];
-
+	
 		$order_data['payment_firstname'] = $order_data['firstname'];
 		$order_data['payment_lastname'] = $order_data['lastname'];
 		$order_data['payment_company'] = $this->session->data['payment_address']['company'];
@@ -1719,10 +1827,10 @@ class ControllerCheckoutUniCheckout extends Controller {
 		$order_data['payment_custom_field'] = (isset($this->session->data['payment_address']['custom_field']) ? $this->session->data['payment_address']['custom_field'] : []);
 		$order_data['payment_address_1'] =  $this->session->data['payment_address']['address_1'];
 		$order_data['payment_address_2'] =  $this->session->data['payment_address']['address_2'];
-
+	
 		$order_data['payment_method'] = isset($this->session->data['payment_method']['title']) ? $this->session->data['payment_method']['title'] : '';
 		$order_data['payment_code'] = isset($this->session->data['payment_method']['code']) ? $this->session->data['payment_method']['code'] : '';
-
+	
 		if ($this->cart->hasShipping()) {
 			$order_data['shipping_firstname'] = $order_data['firstname'];
 			$order_data['shipping_lastname'] = $order_data['lastname'];
@@ -1737,7 +1845,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 			$order_data['shipping_custom_field'] = (isset($this->session->data['shipping_address']['custom_field']) ? $this->session->data['shipping_address']['custom_field'] : []);
 			$order_data['shipping_address_1'] = $this->session->data['shipping_address']['address_1'];
 			$order_data['shipping_address_2'] = $this->session->data['shipping_address']['address_2'];
-
+	
 			$order_data['shipping_method'] = isset($this->session->data['shipping_method']['title']) ? $this->session->data['shipping_method']['title'] : '';
 			$order_data['shipping_code'] = isset($this->session->data['shipping_method']['code']) ? $this->session->data['shipping_method']['code'] : '';
 		} else {
@@ -1758,19 +1866,43 @@ class ControllerCheckoutUniCheckout extends Controller {
 			$order_data['shipping_code'] = '';
 		}
 		
-		if(isset($uniset['checkout']['pickup']['status']) && !empty($this->session->data['unicheckout_pickup']) && $this->session->data['selected_method'] == $this->method_pickup) {
-			$order_data['payment_address_1'] = $order_data['shipping_address_1'] = '';
-			$order_data['payment_city'] = $order_data['shipping_city'] = '';
-			$order_data['payment_postcode'] = $order_data['shipping_postcode'] = '';
-			$order_data['shipping_method'] = sprintf($this->language->get('text_pickup_in_order'), $this->session->data['unicheckout_pickup']['title'], $this->session->data['unicheckout_pickup']['working_hours'], $this->session->data['unicheckout_pickup']['shelf_life']);
-			$order_data['shipping_code'] = $this->method_pickup_code;
+		// ОСНОВНЕ ВИПРАВЛЕННЯ ТУТ
+		if($this->session->data['selected_method'] == $this->method_pickup) {
+			// Повністю очищуємо платіжну адресу, оскільки вона не потрібна для самовивозу
+			$order_data['payment_firstname'] = '';
+			$order_data['payment_lastname'] = '';
+			$order_data['payment_company'] = '';
+			$order_data['payment_address_1'] = '';
+			$order_data['payment_address_2'] = '';
+			$order_data['payment_city'] = '';
+			$order_data['payment_postcode'] = '';
+			$order_data['payment_country'] = '';
+			$order_data['payment_country_id'] = '';
+			$order_data['payment_zone'] = '';
+			$order_data['payment_zone_id'] = '';
+			$order_data['payment_address_format'] = '';
+			$order_data['payment_custom_field'] = [];
+	
+			// Очищуємо також і адресу доставки, щоб жодні дані з Нової пошти не потрапили у замовлення
+			$order_data['shipping_company'] = '';
+			$order_data['shipping_address_1'] = $this->session->data['shipping_method']['title'];
+			$order_data['shipping_address_2'] = '';
+			$order_data['shipping_city'] = $this->session->data['shipping_address']['city'];
+			$order_data['shipping_postcode'] = '-----';
+			$order_data['shipping_country'] = $this->session->data['shipping_address']['country'];
+			$order_data['shipping_country_id'] = $this->session->data['shipping_address']['country_id'];
+			$order_data['shipping_zone'] = $this->session->data['shipping_address']['zone'];
+			$order_data['shipping_zone_id'] =  $this->session->data['shipping_address']['zone_id'];
+			$order_data['shipping_address_format'] = '';
+			$order_data['shipping_custom_field'] = [];
 		}
 
+	
 		$order_data['products'] = [];
-
+	
 		foreach ($this->cart->getProducts() as $product) {
 			$option_data = [];
-
+	
 			foreach ($product['option'] as $option) {
 				$option_data[] = [
 					'product_option_id'       => $option['product_option_id'],
@@ -1782,7 +1914,7 @@ class ControllerCheckoutUniCheckout extends Controller {
 					'type'                    => $option['type']
 				];
 			}
-
+	
 			$order_data['products'][] = [
 				'product_id' => $product['product_id'],
 				'name'       => $product['name'],
@@ -1797,9 +1929,9 @@ class ControllerCheckoutUniCheckout extends Controller {
 				'reward'     => $product['reward']
 			];
 		}
-
+	
 		$order_data['vouchers'] = [];
-
+	
 		if (!empty($this->session->data['vouchers'])) {
 			foreach ($this->session->data['vouchers'] as $voucher) {
 				$order_data['vouchers'][] = [
@@ -1815,19 +1947,19 @@ class ControllerCheckoutUniCheckout extends Controller {
 				];
 			}
 		}
-
+	
 		$order_data['comment'] = $this->session->data['comment'];
 			
 		$order_data['total'] = $total;
 		
 		if (isset($this->request->cookie['tracking'])) {
 			$order_data['tracking'] = $this->request->cookie['tracking'];
-
+	
 			$subtotal = $this->cart->getSubTotal();
-
+	
 			// Affiliate
 			$affiliate_info = $this->model_account_customer->getAffiliateByTracking($this->request->cookie['tracking']);
-
+	
 			if ($affiliate_info) {
 				$order_data['affiliate_id'] = $affiliate_info['customer_id'];
 				$order_data['commission'] = ($subtotal / 100) * $affiliate_info['commission'];
@@ -1835,12 +1967,12 @@ class ControllerCheckoutUniCheckout extends Controller {
 				$order_data['affiliate_id'] = 0;
 				$order_data['commission'] = 0;
 			}
-
+	
 			// Marketing
 			$this->load->model('checkout/marketing');
-
+	
 			$marketing_info = $this->model_checkout_marketing->getMarketingByCode($this->request->cookie['tracking']);
-
+	
 			if ($marketing_info) {
 				$order_data['marketing_id'] = $marketing_info['marketing_id'];
 			} else {
@@ -1852,13 +1984,13 @@ class ControllerCheckoutUniCheckout extends Controller {
 			$order_data['marketing_id'] = 0;
 			$order_data['tracking'] = '';
 		}
-
+	
 		$order_data['language_id'] = $this->config->get('config_language_id');
 		$order_data['currency_id'] = $this->currency->getId($this->session->data['currency']);
 		$order_data['currency_code'] = $this->session->data['currency'];
 		$order_data['currency_value'] = $this->currency->getValue($this->session->data['currency']);
 		$order_data['ip'] = $this->request->server['REMOTE_ADDR'];
-
+	
 		if (!empty($this->request->server['HTTP_X_FORWARDED_FOR'])) {
 			$order_data['forwarded_ip'] = $this->request->server['HTTP_X_FORWARDED_FOR'];
 		} elseif (!empty($this->request->server['HTTP_CLIENT_IP'])) {
@@ -1866,31 +1998,31 @@ class ControllerCheckoutUniCheckout extends Controller {
 		} else {
 			$order_data['forwarded_ip'] = '';
 		}
-
+	
 		if (isset($this->request->server['HTTP_USER_AGENT'])) {
 			$order_data['user_agent'] = $this->request->server['HTTP_USER_AGENT'];
 		} else {
 			$order_data['user_agent'] = '';
 		}
-
+	
 		if (isset($this->request->server['HTTP_ACCEPT_LANGUAGE'])) {
 			$order_data['accept_language'] = $this->request->server['HTTP_ACCEPT_LANGUAGE'];
 		} else {
 			$order_data['accept_language'] = '';
 		}
-
+	
 		if (isset($this->session->data['shipping_method']['code']) && strpos($this->session->data['shipping_method']['code'], 'multistore_pickup.multistore_') !== false) {
 			$order_data['multistore_id'] = (int)str_replace('multistore_pickup.multistore_', '', $this->session->data['shipping_method']['code']);
 		} else {
 			$order_data['multistore_id'] = 0;
 		}
-
+	
 		$this->load->model('checkout/order');
 		$order_id = $this->model_checkout_order->addOrder($order_data);
 		$this->session->data['order_id'] = $order_id;
 		
 		return $order_id;
-  	}
+	}
 	
 	public function country() {
 		$json = [];
